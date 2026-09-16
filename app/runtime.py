@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from app.config import Settings
 from app.providers.factory import build_embedder, build_llm_provider
-from app.retrieval.retriever import INDEX_FILE, META_FILE, FaissRetriever, Retriever
+from app.retrieval.retriever import INDEX_FILE, MANIFEST_FILE, META_FILE, FaissRetriever, Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ def load_retriever(settings: Settings) -> tuple[Retriever | None, int, bool]:
     directory = Path(settings.index_dir)
     index_path = directory / INDEX_FILE
     meta_path = directory / META_FILE
+    manifest_path = directory / MANIFEST_FILE
     if not index_path.exists() or not meta_path.exists():
         logger.warning(
             "No retrieval index at %s - running without protocol retrieval. "
@@ -32,6 +33,11 @@ def load_retriever(settings: Settings) -> tuple[Retriever | None, int, bool]:
             directory,
         )
         return None, 0, False
+    if not manifest_path.exists():
+        raise RuntimeError(
+            f"Retrieval index at {directory} is missing {MANIFEST_FILE}. "
+            "Rebuild with: python -m app.ingestion.build_index"
+        )
 
     try:
         embedder = build_embedder()

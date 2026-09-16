@@ -3,9 +3,10 @@
     python -m app.ingestion.build_index
     python -m app.ingestion.build_index --protocols-dir D:/protocolscarvo --limit 3
 
-Needs OPENAI_API_KEY (used for embeddings). Output goes to <index-dir>/:
-  index.faiss   - inner-product index over L2-normalized embeddings
-  chunks.json   - parallel metadata (text, source, section, ...)
+Needs an embedding provider (local fastembed by default). Output goes to <index-dir>/:
+  index.faiss    - inner-product index over L2-normalized embeddings
+  chunks.json    - parallel metadata (text, source, section, ...)
+  manifest.json  - embedding model, dimension, and vector count
 """
 
 import argparse
@@ -19,7 +20,7 @@ from app.ingestion.chunker import chunk_document
 from app.ingestion.docx_loader import iter_documents
 from app.providers.factory import build_embedder
 from app.providers.openai_provider import Embedder
-from app.retrieval.retriever import INDEX_FILE, META_FILE, normalize
+from app.retrieval.retriever import INDEX_FILE, META_FILE, normalize, write_manifest
 
 EMBED_BATCH = 64
 
@@ -74,6 +75,13 @@ def build(protocols_dir: str, index_dir: str, limit: int | None = None) -> int:
     faiss.write_index(index, str(out_dir / INDEX_FILE))
     (out_dir / META_FILE).write_text(
         json.dumps(records, ensure_ascii=False), encoding="utf-8"
+    )
+    write_manifest(
+        out_dir,
+        embedding_model=str(getattr(embedder, "model", "") or ""),
+        embeddings_provider=settings.embeddings_provider,
+        dimension=int(matrix.shape[1]),
+        count=int(index.ntotal),
     )
     print(f"Wrote {index.ntotal} vectors to {out_dir}/")
     return index.ntotal

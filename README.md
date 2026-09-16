@@ -39,7 +39,7 @@ without schema details. Bodies larger than 2 MB receive HTTP 413.
 cd D:\carvo-intelligence
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 copy .env.example .env   # then set LLM_API_KEY for the chosen LLM_PROVIDER
 uvicorn app.main:app --port 8000 --reload
 ```
@@ -66,12 +66,14 @@ with a missing key.
 .venv\Scripts\python -m app.ingestion.build_index --limit 3   # quick smoke test
 ```
 
-Writes `data/index/{index.faiss,chunks.json}`; the service auto-loads it on boot.
-Without an index the service still runs (retrieval simply returns nothing).
+Writes `data/index/{index.faiss,chunks.json,manifest.json}`; the service auto-loads it on boot.
+Without an index the service still runs (retrieval simply returns nothing). A
+stale index whose manifest does not match the live embedder fails startup.
 
 ## Test
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 

@@ -22,12 +22,12 @@ def test_missing_index_does_not_load_embedder(tmp_path, monkeypatch):
     assert embedder_ready is False
 
 
-def test_corrupt_index_fails_startup(tmp_path, monkeypatch):
+def test_missing_manifest_fails_startup(tmp_path, monkeypatch):
     (tmp_path / "index.faiss").write_bytes(b"not-a-faiss-index")
-    (tmp_path / "chunks.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "chunks.json").write_text("[]", encoding="utf-8")
     monkeypatch.setattr("app.runtime.build_embedder", lambda: object())
 
-    with pytest.raises(RuntimeError, match="Failed to load retrieval index"):
+    with pytest.raises(RuntimeError, match="manifest.json"):
         load_retriever(Settings(index_dir=str(tmp_path), llm_api_key="k"))
 
 
@@ -133,7 +133,7 @@ def test_access_log_does_not_record_analysis_body(caplog):
     assert "LLM_API_KEY" not in text
 
 
-def test_initialize_resources_fails_on_corrupt_index(tmp_path, monkeypatch):
+def test_initialize_resources_fails_on_missing_manifest(tmp_path, monkeypatch):
     (tmp_path / "index.faiss").write_bytes(b"not-a-faiss-index")
     (tmp_path / "chunks.json").write_text("[]", encoding="utf-8")
     monkeypatch.setattr("app.runtime.build_embedder", lambda: object())
@@ -142,7 +142,7 @@ def test_initialize_resources_fails_on_corrupt_index(tmp_path, monkeypatch):
     class _App:
         state = type("S", (), {})()
 
-    with pytest.raises(RuntimeError, match="Failed to load retrieval index"):
+    with pytest.raises(RuntimeError, match="manifest.json"):
         initialize_resources(
             _App(),  # type: ignore[arg-type]
             Settings(index_dir=str(tmp_path), llm_api_key="k", llm_provider="groq"),
