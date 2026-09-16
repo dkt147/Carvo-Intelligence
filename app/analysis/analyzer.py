@@ -13,6 +13,10 @@ from app.schemas.analysis import AnalysisRequest, AnalysisResponse, Recommendati
 logger = logging.getLogger(__name__)
 
 ANALYSIS_VERSION = "phase-2"
+PUBLIC_ERROR = "Analysis provider failed"
+_TRUSTED_METADATA_KEYS = frozenset(
+    {"analysisVersion", "model", "retrievedCount", "retrievedSources"}
+)
 
 
 class Analyzer:
@@ -35,9 +39,8 @@ class Analyzer:
             response = self._to_response(request, raw)
             response.metadata["retrievedCount"] = len(retrieved)
             if retrieved:
-                response.metadata.setdefault(
-                    "retrievedSources",
-                    sorted({c.source for c in retrieved}),
+                response.metadata["retrievedSources"] = sorted(
+                    {c.source for c in retrieved}
                 )
             return response
         except Exception as exc:  # noqa: BLE001 - failures must go back on the contract
@@ -45,7 +48,7 @@ class Analyzer:
             return AnalysisResponse(
                 requestId=request.requestId,
                 status="FAILED",
-                error=str(exc) or exc.__class__.__name__,
+                error=_public_error(exc),
                 metadata=self._base_metadata(),
             )
 
@@ -61,6 +64,10 @@ class Analyzer:
     def _to_response(
         self, request: AnalysisRequest, raw: dict[str, Any]
     ) -> AnalysisResponse:
+        summary = _as_str(raw.get("summary"))
+        if not summary:
+            raise ValueError("Analysis produced no summary")
+
         recommendations = [
             Recommendation(title=item["title"], description=item["description"])
             for item in raw.get("recommendations", [])
@@ -69,10 +76,17 @@ class Analyzer:
             and isinstance(item.get("description"), str)
         ]
 
-        metadata = self._base_metadata()
+        metadata: dict[str, Any] = {}
         model_metadata = raw.get("metadata")
         if isinstance(model_metadata, dict):
-            metadata.update(model_metadata)
+            metadata.update(
+                {
+                    key: value
+                    for key, value in model_metadata.items()
+                    if key not in _TRUSTED_METADATA_KEYS
+                }
+            )
+        metadata.update(self._base_metadata())
 
         protocol_version_id = raw.get("protocolVersionId")
         if not isinstance(protocol_version_id, str):
@@ -81,7 +95,7 @@ class Analyzer:
         return AnalysisResponse(
             requestId=request.requestId,
             status="COMPLETED",
-            summary=_as_str(raw.get("summary")),
+            summary=summary,
             reasoning=_as_str(raw.get("reasoning")),
             protocolVersionId=protocol_version_id,
             recommendations=recommendations,
@@ -97,3 +111,13 @@ class Analyzer:
 
 def _as_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
+
+
+def _public_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    lowered = text.lower()
+    if "http://" in lowered or "https://" in lowered:
+        return PUBLIC_ERROR
+    if isinstance(exc, ValueError) and text:
+        return text[:200]
+    return PUBLIC_ERROR

@@ -85,3 +85,14 @@ def test_parse_accepts_json_object():
         _response(content='{"summary": "ok", "recommendations": []}')
     )
     assert parsed["summary"] == "ok"
+
+
+def test_parse_strips_markdown_code_fences():
+    fenced = """```json
+{"summary": "fenced", "recommendations": []}
+```"""
+    parsed = _parse_chat_completion(_response(content=fenced))
+    assert parsed["summary"] == "fenced"
+
+    fenced_plain = "```\n{\"summary\": \"plain\"}\n```"
+    assert _parse_chat_completion(_response(content=fenced_plain))["summary"] == "plain"

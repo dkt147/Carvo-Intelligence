@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Protocol
 
 import httpx
@@ -7,6 +8,10 @@ CONNECT_TIMEOUT_SECONDS = 5.0
 REQUEST_TIMEOUT_SECONDS = 60.0
 MAX_RETRIES = 1
 MAX_TOKENS = 2048
+_FENCE_RE = re.compile(
+    r"^\s*```(?:json|JSON)?\s*\n?(.*?)\n?```\s*$",
+    re.DOTALL,
+)
 
 
 class LLMProvider(Protocol):
@@ -82,6 +87,8 @@ def _parse_chat_completion(response: Any) -> dict[str, Any]:
     if not isinstance(content, str) or not content.strip():
         raise ValueError("LLM returned empty content")
 
+    content = _strip_code_fences(content)
+
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -91,6 +98,21 @@ def _parse_chat_completion(response: Any) -> dict[str, Any]:
         raise ValueError("Model did not return a JSON object")
 
     return parsed
+
+
+def _strip_code_fences(content: str) -> str:
+    text = content.strip()
+    fenced = _FENCE_RE.match(text)
+    if fenced:
+        return fenced.group(1).strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return text
 
 
 class OpenAIEmbedder:

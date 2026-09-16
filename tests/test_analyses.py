@@ -103,14 +103,46 @@ def test_malformed_recommendations_are_dropped():
 
 
 def test_provider_failure_returns_failed_status_on_contract():
-    provider = FakeProvider(exc=RuntimeError("model unavailable"))
+    provider = FakeProvider(
+        exc=RuntimeError("https://api.groq.com/openai/v1 model unavailable")
+    )
     response = client_with(provider).post("/api/v1/analyses", json=VALID_PAYLOAD)
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "FAILED"
     assert body["requestId"] == "req-123"
-    assert body["error"] == "model unavailable"
+    assert body["error"] == "Analysis provider failed"
+    assert "groq.com" not in body["error"]
+    assert "https://" not in body["error"]
+
+
+def test_empty_summary_is_failed_not_completed():
+    body = client_with(FakeProvider({"summary": "  ", "recommendations": []})).post(
+        "/api/v1/analyses", json=VALID_PAYLOAD
+    ).json()
+    assert body["status"] == "FAILED"
+    assert body["error"] == "Analysis produced no summary"
+
+
+def test_model_metadata_cannot_overwrite_trusted_keys():
+    provider = FakeProvider(
+        {
+            "summary": "ok",
+            "metadata": {
+                "analysisVersion": "attacker",
+                "model": "attacker-model",
+                "retrievedCount": 99,
+                "uncertainties": ["kept"],
+            },
+        }
+    )
+    body = client_with(provider).post("/api/v1/analyses", json=VALID_PAYLOAD).json()
+    assert body["status"] == "COMPLETED"
+    assert body["metadata"]["analysisVersion"] == "phase-2"
+    assert body["metadata"]["model"] == "fake-model"
+    assert body["metadata"]["retrievedCount"] == 0
+    assert body["metadata"]["uncertainties"] == ["kept"]
 
 
 def test_invalid_request_returns_error_shape():
