@@ -10,7 +10,8 @@ The backend calls `POST {AI_SERVICE_URL}/api/v1/analyses` (default
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | liveness check |
+| `GET` | `/health` | liveness check (process is up) |
+| `GET` | `/ready` | readiness: LLM, FAISS index, embedder. HTTP 503 if analysis cannot run |
 | `POST` | `/api/v1/analyses` | run an analysis for one situation |
 
 Request body matches `src/modules/ai/ai.types.ts` (`requestId`, `situation`,
