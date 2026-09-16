@@ -20,6 +20,9 @@ Request body matches `src/modules/ai/ai.types.ts` (`requestId`, `situation`,
 `summary`, `reasoning`, `protocolVersionId`, `recommendations[]`, `metadata`).
 `requestId` is always echoed back. Internal failures return HTTP 200 with
 `status: "FAILED"` and `error`; bad input returns HTTP 422 with `{ "error": ... }`.
+When `AI_SERVICE_API_KEY` is set, analyses require `Authorization: Bearer <key>`
+(same contract as carvo-backend). Unauthenticated callers receive HTTP 401
+without schema details. Bodies larger than 2 MB receive HTTP 413.
 
 ## Scope (Phase 1)
 

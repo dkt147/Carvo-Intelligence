@@ -124,18 +124,22 @@ def test_invalid_request_returns_error_shape():
 
 
 def test_api_key_is_enforced_when_configured(monkeypatch):
-    monkeypatch.setattr("app.api.analyses.settings.ai_service_api_key", "secret")
+    monkeypatch.setattr("app.api.auth.settings.ai_service_api_key", "secret")
     c = client_with(FakeProvider({"summary": "ok"}))
 
-    assert c.post("/api/v1/analyses", json=VALID_PAYLOAD).status_code == 401
-    assert (
-        c.post(
-            "/api/v1/analyses",
-            json=VALID_PAYLOAD,
-            headers={"Authorization": "Bearer wrong"},
-        ).status_code
-        == 401
+    missing = c.post("/api/v1/analyses", json=VALID_PAYLOAD)
+    assert missing.status_code == 401
+    assert missing.json() == {"error": "Invalid or missing API key"}
+    assert "details" not in missing.json()
+
+    wrong = c.post(
+        "/api/v1/analyses",
+        json=VALID_PAYLOAD,
+        headers={"Authorization": "Bearer wrong"},
     )
+    assert wrong.status_code == 401
+    assert wrong.json() == {"error": "Invalid or missing API key"}
+
     assert (
         c.post(
             "/api/v1/analyses",
@@ -144,3 +148,42 @@ def test_api_key_is_enforced_when_configured(monkeypatch):
         ).status_code
         == 200
     )
+
+
+def test_unauthenticated_caller_does_not_receive_validation_details(monkeypatch):
+    monkeypatch.setattr("app.api.auth.settings.ai_service_api_key", "secret")
+    response = client_with(FakeProvider({})).post(
+        "/api/v1/analyses", json={"requestId": "only-this"}
+    )
+    assert response.status_code == 401
+    body = response.json()
+    assert body == {"error": "Invalid or missing API key"}
+    assert "details" not in body
+
+
+def test_oversize_body_is_rejected_before_parse(monkeypatch):
+    monkeypatch.setattr("app.api.auth.settings.ai_service_api_key", "secret")
+    monkeypatch.setattr("app.api.auth.MAX_ANALYSIS_BODY_BYTES", 64)
+    response = client_with(FakeProvider({"summary": "ok"})).post(
+        "/api/v1/analyses",
+        content=b"x" * 128,
+        headers={
+            "Authorization": "Bearer secret",
+            "Content-Type": "application/json",
+        },
+    )
+    assert response.status_code == 413
+    assert response.json() == {"error": "Request body too large"}
+    assert "details" not in response.json()
+
+
+def test_auth_failure_is_not_written_to_access_log(monkeypatch, caplog):
+    monkeypatch.setattr("app.api.auth.settings.ai_service_api_key", "secret")
+    caplog.set_level("INFO", logger="carvo.access")
+    client_with(FakeProvider({})).post(
+        "/api/v1/analyses",
+        json=VALID_PAYLOAD,
+        headers={"Authorization": "Bearer super-secret-token"},
+    )
+    assert "super-secret-token" not in caplog.text
+    assert "secret" not in caplog.text

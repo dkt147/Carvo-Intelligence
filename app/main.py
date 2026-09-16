@@ -3,12 +3,18 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.analyses import router as analyses_router
+from app.api.auth import (
+    AUTH_ERROR,
+    BODY_TOO_LARGE_ERROR,
+    analyses_auth_and_size_response,
+)
 from app.config import settings
 from app.runtime import initialize_resources, readiness_payload
 
@@ -29,6 +35,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(analyses_router)
+
+
+@app.middleware("http")
+async def analysis_auth_and_size(request: Request, call_next):
+    rejected = analyses_auth_and_size_response(request)
+    if rejected is not None:
+        return rejected
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -70,6 +84,15 @@ def ready(request: Request) -> JSONResponse:
     payload = readiness_payload(request.app)
     status_code = 200 if payload["status"] == "ok" else 503
     return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401:
+        return JSONResponse(status_code=401, content={"error": AUTH_ERROR})
+    if exc.status_code == 413:
+        return JSONResponse(status_code=413, content={"error": BODY_TOO_LARGE_ERROR})
+    return await http_exception_handler(request, exc)
 
 
 @app.exception_handler(RequestValidationError)
