@@ -15,6 +15,7 @@ from app.providers.openai_provider import Embedder
 
 INDEX_FILE = "index.faiss"
 META_FILE = "chunks.json"
+MANIFEST_FILE = "manifest.json"
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,85 @@ def normalize(matrix: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
     return (matrix / norms).astype("float32")
+
+
+def write_manifest(
+    index_dir: str | Path,
+    *,
+    embedding_model: str,
+    embeddings_provider: str,
+    dimension: int,
+    count: int,
+) -> None:
+    path = Path(index_dir) / MANIFEST_FILE
+    path.write_text(
+        json.dumps(
+            {
+                "embedding_model": embedding_model,
+                "embeddings_provider": embeddings_provider,
+                "dimension": int(dimension),
+                "count": int(count),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _embedder_dimension(embedder: Embedder) -> int:
+    probe = embedder.embed(["ping"])
+    if not probe or not probe[0]:
+        raise ValueError("Embedder returned no dimension probe vector")
+    return len(probe[0])
+
+
+def validate_index(
+    index,
+    metadata: list,
+    embedder: Embedder,
+    manifest: dict,
+) -> None:
+    model = str(getattr(embedder, "model", "") or "")
+    expected_model = str(manifest.get("embedding_model") or "")
+    if not expected_model:
+        raise ValueError("manifest.json is missing embedding_model")
+    if not model:
+        raise ValueError("Embedder has no model identifier to compare with the index")
+    if expected_model != model:
+        raise ValueError(
+            f"Embedding model mismatch: index was built with {expected_model!r}, "
+            f"service is using {model!r}. Rebuild the index."
+        )
+
+    try:
+        expected_dimension = int(manifest.get("dimension"))
+        expected_count = int(manifest.get("count"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("manifest.json dimension and count must be integers") from exc
+    if expected_dimension <= 0 or expected_count <= 0:
+        raise ValueError("manifest.json dimension and count must be positive")
+
+    dimension = int(getattr(index, "d", 0) or 0)
+    live_dimension = _embedder_dimension(embedder)
+    count = int(getattr(index, "ntotal", 0) or 0)
+    meta_count = len(metadata) if isinstance(metadata, list) else -1
+
+    if dimension != expected_dimension:
+        raise ValueError(
+            f"Index dimension {dimension} does not match manifest {expected_dimension}"
+        )
+    if live_dimension != dimension:
+        raise ValueError(
+            f"Embedder dimension {live_dimension} does not match index dimension {dimension}"
+        )
+    if count != expected_count:
+        raise ValueError(
+            f"Index vector count {count} does not match manifest {expected_count}"
+        )
+    if meta_count != count:
+        raise ValueError(
+            f"chunks.json has {meta_count} records but the index has {count} vectors"
+        )
 
 
 class Retriever(Protocol):
@@ -52,8 +132,21 @@ class FaissRetriever:
         if not index_path.exists() or not meta_path.exists():
             raise FileNotFoundError(f"No FAISS index in {directory}")
 
+        manifest_path = directory / MANIFEST_FILE
+        if not manifest_path.exists():
+            raise ValueError(
+                f"Index at {directory} is missing {MANIFEST_FILE}. "
+                "Rebuild with: python -m app.ingestion.build_index"
+            )
+
         index = faiss.read_index(str(index_path))
         metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        if not isinstance(metadata, list):
+            raise ValueError("chunks.json must contain a JSON array")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest.json must contain a JSON object")
+        validate_index(index, metadata, embedder, manifest)
         return cls(index, metadata, embedder)
 
     def _embed_query(self, query: str) -> list[float]:
