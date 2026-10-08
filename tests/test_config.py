@@ -5,7 +5,8 @@ def test_groq_defaults():
     s = Settings(llm_provider="groq", groq_api_key="gk")
     base_url, model, key = s.resolved_llm()
     assert base_url == "https://api.groq.com/openai/v1"
-    assert model == "llama-3.3-70b-versatile"
+    # assert model == "llama-3.3-70b-versatile"
+    assert model == "openai/gpt-oss-120b"
     assert key == "gk"
 
 

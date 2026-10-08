@@ -5,7 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # base_url + default model per known OpenAI-compatible provider
 _PROVIDER_DEFAULTS: dict[str, tuple[str, str]] = {
     "openai": ("", "gpt-4o-mini"),
-    "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    # "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    "groq": ("https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
 }
 
 
