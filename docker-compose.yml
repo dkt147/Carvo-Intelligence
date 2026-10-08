@@ -1,0 +1,36 @@
+# Private analysis engine for the Carvo worker.
+# Port 8000 is exposed on the Compose network only — it is not published
+# to the host. Reach it at http://carvo-intelligence:8000 from sibling
+# services (carvo-backend worker). Do not add a ports: mapping.
+
+services:
+  carvo-intelligence:
+    build: .
+    image: carvo-intelligence:local
+    container_name: carvo-intelligence
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8000"
+      INDEX_DIR: /app/data/index
+    expose:
+      - "8000"
+    volumes:
+      - intelligence_index:/app/data/index
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  intelligence_index:

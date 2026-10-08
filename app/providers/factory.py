@@ -3,7 +3,7 @@ from app.providers.openai_provider import Embedder, LLMProvider, OpenAIEmbedder,
 
 
 def build_llm_provider() -> LLMProvider:
-    base_url, model, api_key = settings.resolved_llm()
+    base_url, model, api_key = settings.require_llm_config()
     return OpenAIProvider(api_key=api_key, model=model, base_url=base_url)
 
 
